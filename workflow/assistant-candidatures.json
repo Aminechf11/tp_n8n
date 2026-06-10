@@ -1,0 +1,243 @@
+{
+  "name": "Assistant Candidatures par Email",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "name": "Nouveau Email",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [240, 340],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Extraction et Classification de l'email ===\n\nconst subject = $input.item.json.subject || '';\nconst body = $input.item.json.text || $input.item.json.snippet || '';\nconst from = $input.item.json.from || '';\n\n// Mots-clés de détection de candidature\nconst motsCles = [\n  'candidature', 'stage', 'emploi', 'poste', 'recrutement',\n  'cv', 'curriculum vitae', 'lettre de motivation',\n  'postuler', 'alternance', 'apprentissage', 'internship',\n  'offre', 'application', 'apply'\n];\n\nconst texteComplet = (subject + ' ' + body).toLowerCase();\nconst motsDetectes = motsCles.filter(mot => texteComplet.includes(mot));\nconst estCandidature = motsDetectes.length > 0;\n\n// Extraction du nom et email de l'expéditeur\nconst regex = /(?:\"?(.+?)\"?\\s)?<?([\\w.+\\-]+@[\\w.\\-]+\\.[a-z]{2,})>?/i;\nconst match = from.match(regex);\nconst nomCandidat = (match && match[1])\n  ? match[1].trim().replace(/\"/g, '')\n  : 'Candidat';\nconst emailCandidat = match ? match[2] : from.trim();\n\n// Date formatée (heure de Paris)\nconst maintenant = new Date();\nconst dateFormatee = maintenant.toLocaleString('fr-FR', {\n  year: 'numeric', month: '2-digit', day: '2-digit',\n  hour: '2-digit', minute: '2-digit'\n});\n\n// Résumé du contenu (HTML nettoyé)\nconst texteNettoye = body\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&[a-zA-Z]+;/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim();\nconst resume = texteNettoye.length > 400\n  ? texteNettoye.substring(0, 400) + '...'\n  : texteNettoye;\n\nreturn {\n  json: {\n    ...$input.item.json,\n    nomCandidat,\n    emailCandidat,\n    dateFormatee,\n    sujet: subject,\n    resume,\n    estCandidature,\n    motsDetectes,\n    scoreDetection: motsDetectes.length\n  }\n};"
+      },
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d480",
+      "name": "Extraire et Classifier",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              "leftValue": "={{ $json.estCandidature }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d481",
+      "name": "Est une Candidature",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 340]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REMPLACER_PAR_VOTRE_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Candidatures",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.dateFormatee }}",
+            "Nom": "={{ $json.nomCandidat }}",
+            "Email": "={{ $json.emailCandidat }}",
+            "Sujet": "={{ $json.sujet }}",
+            "Resume": "={{ $json.resume }}",
+            "Mots cles": "={{ $json.motsDetectes.join(', ') }}",
+            "Statut": "Nouveau",
+            "Email envoye": "Non"
+          }
+        },
+        "options": {}
+      },
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d482",
+      "name": "Enregistrer dans Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [900, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Extraire et Classifier').item.json.emailCandidat }}",
+        "subject": "=Candidature reçue — {{ $('Extraire et Classifier').item.json.sujet }}",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9f9f9;\">\n  <div style=\"background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);\">\n    <div style=\"background: linear-gradient(135deg, #1a73e8, #0d47a1); color: white; padding: 28px 24px;\">\n      <h1 style=\"margin: 0; font-size: 22px;\">✅ Candidature bien reçue</h1>\n    </div>\n    <div style=\"padding: 28px 24px;\">\n      <p style=\"font-size: 16px; color: #333;\">Bonjour <strong>{{ $('Extraire et Classifier').item.json.nomCandidat }}</strong>,</p>\n      <p style=\"color: #555;\">Nous avons bien reçu votre candidature concernant :</p>\n      <div style=\"background: #f0f7ff; border-left: 4px solid #1a73e8; padding: 14px 18px; margin: 20px 0; border-radius: 0 6px 6px 0;\">\n        <strong style=\"color: #1a73e8;\">{{ $('Extraire et Classifier').item.json.sujet }}</strong>\n      </div>\n      <p style=\"color: #555;\">Notre équipe examinera votre dossier dans les <strong>5 à 7 jours ouvrables</strong> et vous contactera directement à cette adresse.</p>\n      <p style=\"color: #555;\">Merci de l'intérêt que vous portez à notre organisation.</p>\n      <div style=\"margin-top: 32px; padding-top: 20px; border-top: 1px solid #eee;\">\n        <p style=\"color: #333; margin: 0;\">Cordialement,</p>\n        <p style=\"color: #333; margin: 4px 0;\"><strong>L'équipe RH</strong></p>\n        <p style=\"color: #999; font-size: 12px; margin-top: 12px;\"><em>Ce message a été envoyé automatiquement — merci de ne pas y répondre directement.</em></p>\n      </div>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d483",
+      "name": "Confirmation Candidat",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1120, 180],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "webhookUri": "REMPLACER_PAR_VOTRE_WEBHOOK_DISCORD",
+        "text": "=📬 **Nouvelle candidature reçue !**\n\n👤 **Candidat :** {{ $('Extraire et Classifier').item.json.nomCandidat }}\n✉️ **Email :** {{ $('Extraire et Classifier').item.json.emailCandidat }}\n📝 **Objet :** {{ $('Extraire et Classifier').item.json.sujet }}\n🕒 **Reçu le :** {{ $('Extraire et Classifier').item.json.dateFormatee }}\n🔑 **Mots-clés :** {{ $('Extraire et Classifier').item.json.motsDetectes.join(', ') }}\n\n📊 ✅ Enregistré dans Google Sheets\n📧 ✅ Email de confirmation envoyé"
+      },
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d484",
+      "name": "Notifier Discord",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [1340, 180]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Extraire et Classifier').item.json.emailCandidat }}",
+        "subject": "=Accusé de réception — {{ $('Extraire et Classifier').item.json.sujet }}",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9f9f9;\">\n  <div style=\"background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);\">\n    <div style=\"background: linear-gradient(135deg, #34a853, #1e8e3e); color: white; padding: 24px;\">\n      <h2 style=\"margin: 0; font-size: 20px;\">📩 Message bien reçu</h2>\n    </div>\n    <div style=\"padding: 24px;\">\n      <p>Bonjour <strong>{{ $('Extraire et Classifier').item.json.nomCandidat }}</strong>,</p>\n      <p style=\"color: #555;\">Nous avons bien reçu votre message et notre équipe le traitera dans les meilleurs délais.</p>\n      <p style=\"color: #555;\">N'hésitez pas à nous recontacter si vous avez des questions.</p>\n      <div style=\"margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;\">\n        <p style=\"color: #333; margin: 0;\">Cordialement,</p>\n        <p style=\"color: #333; margin: 4px 0;\"><strong>L'équipe</strong></p>\n        <p style=\"color: #999; font-size: 12px; margin-top: 10px;\"><em>Ce message a été envoyé automatiquement.</em></p>\n      </div>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d485",
+      "name": "Reponse Generique",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [900, 520],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Nouveau Email": {
+      "main": [
+        [
+          {
+            "node": "Extraire et Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraire et Classifier": {
+      "main": [
+        [
+          {
+            "node": "Est une Candidature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Est une Candidature": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer dans Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reponse Generique",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer dans Sheets": {
+      "main": [
+        [
+          {
+            "node": "Confirmation Candidat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation Candidat": {
+      "main": [
+        [
+          {
+            "node": "Notifier Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": ""
+  },
+  "id": "tp-n8n-assistant-candidatures",
+  "tags": [
+    {
+      "createdAt": "2026-06-10T00:00:00.000Z",
+      "updatedAt": "2026-06-10T00:00:00.000Z",
+      "id": "1",
+      "name": "TP n8n"
+    }
+  ]
+}
