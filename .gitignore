@@ -1,0 +1,19 @@
+# n8n local data
+.n8n/
+n8n-data/
+
+# Environment files (ne jamais commiter les clés API)
+.env
+.env.local
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Node
+node_modules/
